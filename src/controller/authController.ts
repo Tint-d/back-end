@@ -64,8 +64,8 @@ export const login = async (req: Request, res: Response): Promise<void> => {
       message: "User logged in successfully",
       accessToken,
     });
-  } catch (error) {
-    res.status(500).json({ message: "Login failed" });
+  } catch (error: any) {
+    res.status(500).json({ message: error.message });
   }
 };
 

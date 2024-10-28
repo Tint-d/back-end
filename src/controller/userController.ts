@@ -89,3 +89,28 @@ export const deleteUser = async (req: Request, res: Response) => {
       .json({ message: error.message });
   }
 };
+
+// Auto-complete user search
+export const searchUsers = async (req: Request, res: Response) => {
+  const { query } = req.query;
+  if (!query || typeof query !== "string") {
+    throw new BadRequest("Query must be a string");
+  }
+
+  try {
+    const users = await User.find({
+      $or: [
+        { username: { $regex: query, $options: "i" } },
+        { email: { $regex: query, $options: "i" } },
+      ],
+    })
+      .select("-password")
+      .limit(10);
+
+    res.status(200).json({ success: true, users });
+  } catch (error: any) {
+    res
+      .status(500)
+      .json({ message: "Failed to search users", error: error.message });
+  }
+};

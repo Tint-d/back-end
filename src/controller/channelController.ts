@@ -52,12 +52,102 @@ export const createChannel = async (req: Request, res: Response) => {
 // View public channels (Admins, Traders, and Guests)
 export const viewChannels = async (req: Request, res: Response) => {
   const userId = (req as any).user._id;
+  const { search = "", page = 1, limit = 10 } = req.query;
 
-  const channels = await Channel.find({
-    $or: [{ created_by: userId }, { isPrivate: false }],
-  });
+  const pageNum = parseInt(page as string, 10) || 1;
+  const limitNum = parseInt(limit as string, 10) || 10;
+  const skip = (pageNum - 1) * limitNum;
 
-  res.status(200).json({ success: true, channels });
+  try {
+    const channels = await Channel.find({
+      $and: [
+        {
+          $or: [{ created_by: userId }, { isPrivate: false }],
+        },
+        { name: { $regex: search, $options: "i" } },
+      ],
+    })
+      .skip(skip)
+      .limit(limitNum)
+      .populate("members.userId", "username role")
+      .populate("invitedUsers.userId", "username");
+
+    const totalChannels = await Channel.countDocuments({
+      $or: [
+        { created_by: userId },
+        { isPrivate: false, name: { $regex: search, $options: "i" } },
+      ],
+    });
+
+    // Transforming the channels to match the desired structure
+    const formattedChannels = channels.map((channel) => {
+      return {
+        _id: channel._id,
+        name: channel.name,
+        created_by: channel.created_by,
+        isPrivate: channel.isPrivate,
+        members: channel.members.map((member) => ({
+          userId: member.userId._id,
+          username: (member.userId as any).username,
+          role: member.role,
+          _id: (member as any)._id,
+        })),
+        invitedUsers: channel.invitedUsers.map((invited) => ({
+          userId: invited.userId._id,
+          username: (invited.userId as any).username,
+          status: invited.status,
+          _id: (invited as any)._id,
+        })),
+      };
+    });
+
+    res.status(200).json({
+      success: true,
+      channels: formattedChannels,
+      pagination: {
+        totalChannels,
+        currentPage: pageNum,
+        totalPages: Math.ceil(totalChannels / limitNum),
+      },
+    });
+  } catch (error: any) {
+    res.status(500).json({
+      success: false,
+      error: error.message,
+    });
+  }
+};
+
+// Get channel details by ID
+export const getChannelDetail = async (req: Request, res: Response) => {
+  const { channelId } = req.params;
+  try {
+    const channel = await Channel.findById(channelId)
+      .populate("members.userId", "username") // Populate username from the user model
+      .select("-__v");
+
+    if (!channel) throw new NotFound("Channel not found");
+
+    res.status(200).json({
+      success: true,
+      channels: {
+        _id: channel._id,
+        name: channel.name,
+        isPrivate: channel.isPrivate,
+        created_by: channel.created_by, // This should return the creator's ID or you might want to populate it too
+        members: channel.members.map((member) => ({
+          userId: member.userId._id, // Populate userId
+          username: (member.userId as any).username, // Populate username
+          role: member.role, // Include the role
+        })),
+      },
+    });
+  } catch (error: any) {
+    res.status(500).json({
+      success: false,
+      error: error.message,
+    });
+  }
 };
 
 // join channel
@@ -169,7 +259,7 @@ export const acceptInvitation = async (req: Request, res: Response) => {
   if (!channel) throw new NotFound("Channel not found.");
 
   const invitedUser = channel.invitedUsers.find(
-    (invite) => invite.userId.toString() === userId
+    (invite) => invite.userId.toString() === userId.toString()
   );
 
   if (!invitedUser)
@@ -177,6 +267,7 @@ export const acceptInvitation = async (req: Request, res: Response) => {
 
   // Update status to accepted
   invitedUser.status = "accepted";
+  // invitedUser.
 
   // Add the user to members
   channel.members.push({ userId: userId, role: "trader" });
@@ -205,28 +296,43 @@ export const acceptInvitation = async (req: Request, res: Response) => {
 
 export const getNotifications = async (req: Request, res: Response) => {
   const userId = (req as any).user._id;
-  const notifications = await Notification.find({ userId }).sort({
-    createdAt: -1,
-  });
 
-  res.status(200).json({ notifications });
+  try {
+    const notifications = await Notification.find({ userId })
+      .populate("userId", "username")
+      .sort({ createdAt: -1 });
+
+    res.status(200).json({ notifications });
+  } catch (error) {
+    console.error("Error fetching notifications:", error);
+    res.status(500).json({ error: "Internal server error" });
+  }
 };
 
 export const deleteChannel = async (req: Request, res: Response) => {
   const { channelId } = req.params;
+  const requestingUserId = (req as any).user.id;
 
   try {
-    const deletedChannel = await Channel.findByIdAndDelete(channelId);
-    if (!deletedChannel) throw new NotFound("Channel not found");
+    const channel = await Channel.findById(channelId);
+    if (!channel) throw new NotFound("Channel not found");
 
+    const isAdmin = channel.members.some(
+      (member) =>
+        member.userId.toString() === requestingUserId && member.role === "admin"
+    );
+
+    if (!isAdmin) throw new Forbidden("Only an admin can delete this channel");
+
+    await channel.deleteOne();
     res.status(200).json({
       success: true,
       message: "Channel deleted successfully",
     });
-  } catch (err) {
+  } catch (err: any) {
     res.status(500).json({
       success: false,
-      error: "Error deleting channel",
+      error: err.message,
     });
   }
 };
