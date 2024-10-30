@@ -17,14 +17,14 @@ dotenv.config();
 const app = express();
 const PORT = process.env.PORT || 5000;
 
-const allowedOrigins = [
-  "http://localhost:5173",
-  "https://react-socket-six.vercel.app",
-];
+// const "https://react-socket-six.vercel.app" = [
+//   "http://localhost:5173",
+//   "https://react-socket-six.vercel.app",
+// ];
 
 app.use(
   cors({
-    origin: allowedOrigins,
+    origin: "https://react-socket-six.vercel.app",
     credentials: true,
   })
 );
@@ -51,7 +51,7 @@ app.use(errorHandler as unknown as ErrorRequestHandler);
 const httpServer = createServer(app);
 const io = new Server(httpServer, {
   cors: {
-    origin: allowedOrigins,
+    origin: "https://react-socket-six.vercel.app",
     methods: ["GET", "POST"],
     credentials: true,
   },
