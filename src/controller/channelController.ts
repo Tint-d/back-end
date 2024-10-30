@@ -189,13 +189,64 @@ export const joinChannel = async (req: Request, res: Response) => {
     throw new BadRequest("User already exist in this channel!");
 
   if (!anotherExistingMember) {
-    channel.members.push({ userId: user, role: "trader" }); // Default role as trader
+    channel.members.push({ userId: user, role: "trader" });
     await channel.save();
   }
 
   res.status(200).json({ message: "Joined channel successfully." });
 };
 
+// leave channel
+export const leaveChannel = async (req: Request, res: Response) => {
+  const userId = (req as any).user._id;
+  const { channelId } = req.body;
+  const io = getIO();
+
+  try {
+    const channel = await Channel.findById(channelId);
+    if (!channel) throw new NotFound("Channel not found");
+
+    const memberIndex = channel.members.findIndex(
+      (member) => member.userId.toString() === userId.toString()
+    );
+
+    if (memberIndex === -1) {
+      throw new BadRequest("You are not a member of this channel.");
+    }
+
+    channel.members.splice(memberIndex, 1);
+    await channel.save();
+
+    const admin = channel.members.find((member) => member.role === "admin");
+    if (admin) {
+      const notification = new Notification({
+        userId: admin.userId,
+        message: `${(req as any).user.username} has left the channel "${
+          channel.name
+        }".`,
+        channelId: channelId,
+      });
+      await notification.save();
+
+      io.to(admin.userId.toString()).emit("memberLeft", {
+        message: `${(req as any).user.username} has left the channel "${
+          channel.name
+        }".`,
+        channelId: channelId,
+      });
+    }
+
+    res.status(200).json({
+      success: true,
+      message: "You have successfully left the channel.",
+    });
+  } catch (error: any) {
+    res.status(500).json({
+      success: false,
+      error: error.message,
+    });
+  }
+};
 // invition  channel
 export const inviteToChannel = async (req: Request, res: Response) => {
   const { channelId, userId } = req.body;
