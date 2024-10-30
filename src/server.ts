@@ -24,7 +24,7 @@ const PORT = process.env.PORT || 5000;
 
 app.use(
   cors({
-    origin: "https://react-socket-six.vercel.app",
+    origin: true,
     credentials: true,
   })
 );
@@ -51,7 +51,7 @@ app.use(errorHandler as unknown as ErrorRequestHandler);
 const httpServer = createServer(app);
 const io = new Server(httpServer, {
   cors: {
-    origin: "https://react-socket-six.vercel.app",
+    origin: true,
     methods: ["GET", "POST"],
     credentials: true,
   },
